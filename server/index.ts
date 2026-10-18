@@ -8,7 +8,7 @@ import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
-import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, lt, sql } from 'drizzle-orm';
 import { products, users, emailTokens, cartItems, orders, orderItems } from './db/schema';
 import { db } from './db';
 import { sendVerificationEmail } from './mail';
@@ -775,4 +775,63 @@ app.get('/api/admin/orders', ...requireRole('staff', 'admin'), async (req, res) 
     res.status(500).json({ error: 'שגיאת שרת' });
   }
 });
+
+// ---------- ניהול משתמשות (מנהלת בלבד) ----------
+const ROLES = ['customer', 'staff', 'admin'] as const;
+type RoleValue = (typeof ROLES)[number];
+
+app.get('/api/admin/users', ...requireRole('admin'), async (req, res) => {
+  try {
+    const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : '';
+    const escaped = q.replace(/[\\%_]/g, (c) => `\\${c}`); // לא נותנים לתווי חיפוש מיוחדים לעבוד
+    const rows = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        name: users.name,
+        role: users.role,
+        emailVerified: users.emailVerified,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .where(q ? ilike(users.email, `%${escaped}%`) : undefined)
+      .orderBy(desc(users.createdAt))
+      .limit(50);
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'שגיאת שרת' });
+  }
+});
+
+app.patch('/api/admin/users/:id/role', ...requireRole('admin'), async (req: AuthedRequest, res) => {
+  try {
+    const id = Number(req.params.id);
+    const role = req.body?.role;
+    if (!Number.isInteger(id) || !(ROLES as readonly unknown[]).includes(role)) {
+      return res.status(400).json({ error: 'נתונים לא תקינים' });
+    }
+    if (id === req.user!.id) {
+      return res.status(403).json({ error: 'אי אפשר לשנות את התפקיד של עצמך' });
+    }
+
+    const [target] = await db.select().from(users).where(eq(users.id, id));
+    if (!target) return res.status(404).json({ error: 'המשתמשת לא נמצאה' });
+
+    if (role !== 'customer' && !target.emailVerified) {
+      return res.status(400).json({ error: 'אפשר לתת הרשאות רק למשתמשת עם אימייל מאומת' });
+    }
+
+    const [updated] = await db
+      .update(users)
+      .set({ role: role as RoleValue })
+      .where(eq(users.id, id))
+      .returning({ id: users.id, email: users.email, role: users.role });
+    res.json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'שגיאת שרת' });
+  }
+});
+
 app.listen(4000, () => console.log('Server on http://localhost:4000'));

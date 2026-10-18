@@ -211,3 +211,15 @@ header {
 .order-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .wa-btn { background: #25d366; color: #0b2e1a; padding: 8px 16px; border-radius: 6px; font-weight: 600; text-decoration: none; }
 .order-actions small { color: var(--muted); }
+
+.users-search { display: flex; gap: 10px; margin-bottom: 16px; }
+.users-search input {
+  flex: 1; padding: 10px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--surface); color: var(--ink); font: inherit;
+}
+.users-search .btn { padding: 10px 20px; }
+.admin-table select {
+  padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--surface); color: var(--ink); font: inherit;
+}
+.admin-table select:disabled { opacity: .5; }
