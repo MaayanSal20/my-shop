@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '../lib/api';
+import AdminNav from './AdminNav';
 
 const ROLE_LABEL = { customer: 'לקוחה', staff: 'עובדת', admin: 'מנהלת' };
 
@@ -61,11 +62,8 @@ export default function AdminUsers() {
   return (
     <main className="admin">
       <div className="admin-head">
-        <h1>משתמשות והרשאות</h1>
-        <Link href="/admin">מוצרים</Link>
-        <Link href="/admin/orders">הזמנות</Link>
-        <Link href="/">לחנות</Link>
-        <Link href="/admin/users">משתמשות</Link>
+        <h1>ניהול משתמשות</h1>
+        <AdminNav role={me.role} current="/admin/users" />
       </div>
 
       <form className="users-search" onSubmit={onSearch}>

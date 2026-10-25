@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '../lib/api';
+import AdminNav from './AdminNav';
 
 const STATUS = {
   pending: 'ממתינה לתשלום',
@@ -63,8 +64,7 @@ export default function AdminOrders() {
     <main className="admin">
       <div className="admin-head">
         <h1>הזמנות</h1>
-        <Link href="/admin">ניהול מוצרים</Link>
-        <Link href="/">לחנות</Link>
+        <AdminNav role={user.role} current="/admin/orders" />
       </div>
 
       <label className="orders-filter">

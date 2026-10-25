@@ -223,3 +223,10 @@ header {
   background: var(--surface); color: var(--ink); font: inherit;
 }
 .admin-table select:disabled { opacity: .5; }
+
+.admin-nav { display: flex; flex-wrap: wrap; gap: 8px; }
+.admin-nav a {
+  padding: 6px 16px; border: 1px solid var(--line); border-radius: 99px;
+  color: var(--ink); text-decoration: none;
+}
+.admin-nav a.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }

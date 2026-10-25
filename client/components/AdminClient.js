@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api, uploadFile } from '../lib/api';
+import AdminNav from './AdminNav';
 
 const CATEGORIES = ['תכשיטים', 'תיקים', 'צעיפים', 'משקפיים'];
 const EMPTY = { name: '', category: CATEGORIES[0], price: '', stock: '', color: '#E4DDD3' };
@@ -123,8 +124,7 @@ export default function AdminClient() {
       <div className="admin-head">
         <h1>ניהול מוצרים</h1>
         <span>{user.email} · {isAdmin ? 'מנהל' : 'עובד'}</span>
-        <Link href="/">לחנות</Link>
-        <Link href="/admin/orders">הזמנות</Link>
+        <AdminNav role={user.role} current="/admin" />
       </div>
 
       <form className="admin-form" onSubmit={onSubmit}>
