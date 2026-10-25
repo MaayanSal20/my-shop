@@ -16,8 +16,8 @@ import { getProvider } from './payments/provider';
 import { markOrderPaid } from './payments/markPaid';
 import multer from 'multer';
 import { detectImage, uploadProductImage } from './storage';
-
-
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
 
 // ---------- הגדרות כלליות ----------
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -26,9 +26,47 @@ if (!JWT_SECRET) throw new Error('JWT_SECRET חסר ב-.env');
 const CLIENT_URL = process.env.CLIENT_URL ?? 'http://localhost:3000';
 
 const app = express();
+
+// מאחורי שרת אירוח (פרוקסי) צריך לספר ל-Express, אחרת כל הבקשות ייראו כאילו הגיעו מאותה כתובת.
+// הערך 1 מתאים לפרוקסי אחד. לוודא מול שירות האירוח שנבחר
+if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
+
+app.use(helmet());
 app.use(cors({ origin: CLIENT_URL, credentials: true }));
 app.use(cookieParser());
-app.use(express.json());
+app.use(express.json({ limit: '10kb' }));
+
+// ---------- הגבלת בקשות ----------
+const TOO_MANY = { error: 'יותר מדי ניסיונות. נסי שוב בעוד כמה דקות.' };
+
+function limiter(
+  windowMinutes: number,
+  limit: number,
+  key?: (req: Request) => string,
+  skipSuccessful = false
+) {
+  return rateLimit({
+    windowMs: windowMinutes * 60 * 1000,
+    limit,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: TOO_MANY,
+    skipSuccessfulRequests: skipSuccessful,
+    ...(key ? { keyGenerator: key } : {}),
+  });
+}
+
+// מגביל לפי האימייל שבגוף הבקשה (בנוסף להגבלה לפי כתובת IP)
+const byEmail = (prefix: string, limit: number, skipSuccessful = false) =>
+  limiter(
+    15,
+    limit,
+    (req) => `${prefix}:${String(req.body?.email ?? '').trim().toLowerCase().slice(0, 100)}`,
+    skipSuccessful
+  );
+
+app.use('/api', limiter(1, 300)); // הגבלה כללית
+const authIpLimit = limiter(15, 20); // 20 בקשות ל-15 דקות מכתובת אחת
 
 // ---------- הרשאות ----------
 type Role = 'customer' | 'staff' | 'admin';
@@ -42,7 +80,7 @@ async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction
     const token = req.cookies?.token;
     if (!token) return res.status(401).json({ error: 'נדרשת התחברות' });
 
-    const payload = jwt.verify(token, JWT_SECRET!) as jwt.JwtPayload;
+    const payload = jwt.verify(token, JWT_SECRET!, { algorithms: ['HS256'] }) as jwt.JwtPayload;
     const [user] = await db
       .select({
         id: users.id,
@@ -74,10 +112,10 @@ function requireRole(...roles: Role[]) {
   ];
 }
 
-/// ---------- אימות אימייל בקוד ----------
-const CODE_TTL_MS = 10 * 60 * 1000;      // תוקף הקוד
-const MAX_ATTEMPTS = 5;                  // ניסיונות שגויים מותרים
-const RESEND_COOLDOWN_MS = 60 * 1000;    // המתנה בין שליחות
+// ---------- אימות אימייל בקוד ----------
+const CODE_TTL_MS = 10 * 60 * 1000; // תוקף הקוד
+const MAX_ATTEMPTS = 5; // ניסיונות שגויים מותרים
+const RESEND_COOLDOWN_MS = 60 * 1000; // המתנה בין שליחות
 
 function hashCode(code: string) {
   return crypto.createHmac('sha256', JWT_SECRET!).update(code).digest('hex');
@@ -96,7 +134,10 @@ async function issueVerification(userId: number, email: string) {
 
 // שמה עוגיית התחברות (משמש גם בהתחברות וגם אחרי אימות)
 function setAuthCookie(res: Response, userId: number) {
-  const token = jwt.sign({ sub: String(userId) }, JWT_SECRET!, { expiresIn: '7d' });
+  const token = jwt.sign({ sub: String(userId) }, JWT_SECRET!, {
+    expiresIn: '7d',
+    algorithm: 'HS256',
+  });
   res.cookie('token', token, {
     httpOnly: true,
     sameSite: 'lax',
@@ -146,15 +187,17 @@ app.get('/api/products/:id', async (req, res) => {
 });
 
 // ---------- הרשמה והתחברות ----------
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', limiter(60, 10), async (req, res) => {
   try {
     const { email, password, name, phone, marketingConsent } = req.body ?? {};
 
     if (typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email)) {
       return res.status(400).json({ error: 'אימייל לא תקין' });
     }
-    if (typeof password !== 'string' || password.length < 8) {
-      return res.status(400).json({ error: 'הסיסמה חייבת להכיל לפחות 8 תווים' });
+    if (typeof password !== 'string' || password.length < 8 || Buffer.byteLength(password) > 72) {
+      return res.status(400).json({
+        error: 'הסיסמה חייבת להיות באורך 8 תווים לפחות ועד 72 בייטים (אות עברית תופסת 2)',
+      });
     }
 
     const normalized = email.trim().toLowerCase();
@@ -180,9 +223,7 @@ app.post('/api/auth/register', async (req, res) => {
 
     // שולחים מייל אימות. בלי await, כדי שכשל במייל לא יפיל את ההרשמה
     console.log('[register] שולחת אימות אל', user.email);
-    issueVerification(user.id, user.email).catch((e) =>
-      console.error('[verify] נכשל:', e)
-    );
+    issueVerification(user.id, user.email).catch((e) => console.error('[verify] נכשל:', e));
 
     res.status(201).json(user);
   } catch (err) {
@@ -191,7 +232,10 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+// השוואה מול גיבוב מדומה כשהמשתמשת לא קיימת, כדי שזמן התגובה לא יגלה אילו אימיילים רשומים
+const DUMMY_HASH = bcrypt.hashSync('dummy-password-for-timing', 12);
+
+app.post('/api/auth/login', authIpLimit, byEmail('login', 8, true), async (req, res) => {
   try {
     const { email, password } = req.body ?? {};
     if (typeof email !== 'string' || typeof password !== 'string') {
@@ -202,7 +246,7 @@ app.post('/api/auth/login', async (req, res) => {
       .select()
       .from(users)
       .where(eq(users.email, email.trim().toLowerCase()));
-    const ok = user && (await bcrypt.compare(password, user.passwordHash));
+    const ok = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
     if (!user || !ok) {
       return res.status(401).json({ error: 'אימייל או סיסמה שגויים' });
     }
@@ -225,7 +269,7 @@ app.get('/api/auth/me', requireAuth, (req: AuthedRequest, res) => {
 });
 
 // ---------- אימות אימייל ----------
-app.post('/api/auth/verify', async (req, res) => {
+app.post('/api/auth/verify', authIpLimit, byEmail('verify', 10), async (req, res) => {
   try {
     const { email, code } = req.body ?? {};
     const fail = () =>
@@ -268,7 +312,7 @@ app.post('/api/auth/verify', async (req, res) => {
 });
 
 // בקשת קוד חדש. התשובה תמיד זהה, כדי לא לחשוף אילו אימיילים רשומים
-app.post('/api/auth/resend-code', async (req, res) => {
+app.post('/api/auth/resend-code', authIpLimit, byEmail('resend', 5), async (req, res) => {
   try {
     const { email } = req.body ?? {};
     if (typeof email === 'string') {
@@ -291,7 +335,7 @@ app.post('/api/auth/resend-code', async (req, res) => {
 });
 
 // ---------- ניהול (בדיקה) ----------
-app.get('/api/admin/ping', requireRole('staff', 'admin'), (req, res) => {
+app.get('/api/admin/ping', ...requireRole('staff', 'admin'), (req, res) => {
   res.json({ ok: true, message: 'יש לך הרשאת ניהול' });
 });
 
@@ -428,7 +472,7 @@ async function expireOldOrders() {
 }
 setInterval(() => expireOldOrders().catch(console.error), 60_000);
 
-app.post('/api/checkout', requireAuth, async (req: AuthedRequest, res) => {
+app.post('/api/checkout', limiter(15, 10), requireAuth, async (req: AuthedRequest, res) => {
   try {
     if (!req.user!.emailVerified) {
       return res.status(403).json({ error: 'יש לאמת את כתובת האימייל לפני רכישה' });
@@ -573,7 +617,10 @@ app.post('/api/orders/:id/pay', requireAuth, async (req: AuthedRequest, res) => 
 // אישור תשלום של הספק המדומה (פיתוח בלבד)
 app.post('/api/payments/mock/confirm', requireAuth, async (req: AuthedRequest, res) => {
   try {
-    if (process.env.NODE_ENV === 'production' || (process.env.PAYMENT_PROVIDER ?? 'mock') !== 'mock') {
+    if (
+      process.env.NODE_ENV === 'production' ||
+      (process.env.PAYMENT_PROVIDER ?? 'mock') !== 'mock'
+    ) {
       return res.status(404).json({ error: 'לא נמצא' });
     }
     const id = Number(req.body?.orderId);
@@ -640,50 +687,58 @@ app.post('/api/admin/products', ...requireRole('staff', 'admin'), async (req, re
   }
 });
 
-app.patch('/api/admin/products/:id', ...requireRole('staff', 'admin'), async (req: AuthedRequest, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: 'מזהה לא תקין' });
+app.patch(
+  '/api/admin/products/:id',
+  ...requireRole('staff', 'admin'),
+  async (req: AuthedRequest, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id)) return res.status(400).json({ error: 'מזהה לא תקין' });
 
-    const { data, errors } = parseProductInput(req.body ?? {}, true);
-    if (errors.length) return res.status(400).json({ error: errors.join(', ') });
-    if (Object.keys(data).length === 0) return res.status(400).json({ error: 'אין מה לעדכן' });
+      const { data, errors } = parseProductInput(req.body ?? {}, true);
+      if (errors.length) return res.status(400).json({ error: errors.join(', ') });
+      if (Object.keys(data).length === 0) return res.status(400).json({ error: 'אין מה לעדכן' });
 
-    const [product] = await db.select().from(products).where(eq(products.id, id));
-    if (!product) return res.status(404).json({ error: 'המוצר לא נמצא' });
+      const [product] = await db.select().from(products).where(eq(products.id, id));
+      if (!product) return res.status(404).json({ error: 'המוצר לא נמצא' });
 
-    // מוצר שאזל: רק מנהל יכול להוסיף לו מלאי
-    if (data.stock !== undefined && product.stock === 0 && req.user!.role !== 'admin') {
-      return res.status(403).json({ error: 'רק מנהל יכול להוסיף מלאי למוצר שאזל' });
+      // מוצר שאזל: רק מנהל יכול להוסיף לו מלאי
+      if (data.stock !== undefined && product.stock === 0 && req.user!.role !== 'admin') {
+        return res.status(403).json({ error: 'רק מנהל יכול להוסיף מלאי למוצר שאזל' });
+      }
+
+      const [updated] = await db.update(products).set(data).where(eq(products.id, id)).returning();
+      res.json(updated);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'שגיאת שרת' });
     }
-
-    const [updated] = await db.update(products).set(data).where(eq(products.id, id)).returning();
-    res.json(updated);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'שגיאת שרת' });
   }
-});
+);
 
-app.delete('/api/admin/products/:id', ...requireRole('staff', 'admin'), async (req: AuthedRequest, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: 'מזהה לא תקין' });
+app.delete(
+  '/api/admin/products/:id',
+  ...requireRole('staff', 'admin'),
+  async (req: AuthedRequest, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id)) return res.status(400).json({ error: 'מזהה לא תקין' });
 
-    const [product] = await db.select().from(products).where(eq(products.id, id));
-    if (!product) return res.status(404).json({ error: 'המוצר לא נמצא' });
+      const [product] = await db.select().from(products).where(eq(products.id, id));
+      if (!product) return res.status(404).json({ error: 'המוצר לא נמצא' });
 
-    if (product.stock === 0 && req.user!.role !== 'admin') {
-      return res.status(403).json({ error: 'רק מנהל יכול להסיר מוצר שאזל' });
+      if (product.stock === 0 && req.user!.role !== 'admin') {
+        return res.status(403).json({ error: 'רק מנהל יכול להסיר מוצר שאזל' });
+      }
+
+      await db.delete(products).where(eq(products.id, id));
+      res.json({ ok: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'שגיאת שרת' });
     }
-
-    await db.delete(products).where(eq(products.id, id));
-    res.json({ ok: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'שגיאת שרת' });
   }
-});
+);
 
 // ---------- העלאת תמונת מוצר ----------
 const upload = multer({
@@ -804,34 +859,38 @@ app.get('/api/admin/users', ...requireRole('admin'), async (req, res) => {
   }
 });
 
-app.patch('/api/admin/users/:id/role', ...requireRole('admin'), async (req: AuthedRequest, res) => {
-  try {
-    const id = Number(req.params.id);
-    const role = req.body?.role;
-    if (!Number.isInteger(id) || !(ROLES as readonly unknown[]).includes(role)) {
-      return res.status(400).json({ error: 'נתונים לא תקינים' });
-    }
-    if (id === req.user!.id) {
-      return res.status(403).json({ error: 'אי אפשר לשנות את התפקיד של עצמך' });
-    }
+app.patch(
+  '/api/admin/users/:id/role',
+  ...requireRole('admin'),
+  async (req: AuthedRequest, res) => {
+    try {
+      const id = Number(req.params.id);
+      const role = req.body?.role;
+      if (!Number.isInteger(id) || !(ROLES as readonly unknown[]).includes(role)) {
+        return res.status(400).json({ error: 'נתונים לא תקינים' });
+      }
+      if (id === req.user!.id) {
+        return res.status(403).json({ error: 'אי אפשר לשנות את התפקיד של עצמך' });
+      }
 
-    const [target] = await db.select().from(users).where(eq(users.id, id));
-    if (!target) return res.status(404).json({ error: 'המשתמשת לא נמצאה' });
+      const [target] = await db.select().from(users).where(eq(users.id, id));
+      if (!target) return res.status(404).json({ error: 'המשתמשת לא נמצאה' });
 
-    if (role !== 'customer' && !target.emailVerified) {
-      return res.status(400).json({ error: 'אפשר לתת הרשאות רק למשתמשת עם אימייל מאומת' });
+      if (role !== 'customer' && !target.emailVerified) {
+        return res.status(400).json({ error: 'אפשר לתת הרשאות רק למשתמשת עם אימייל מאומת' });
+      }
+
+      const [updated] = await db
+        .update(users)
+        .set({ role: role as RoleValue })
+        .where(eq(users.id, id))
+        .returning({ id: users.id, email: users.email, role: users.role });
+      res.json(updated);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'שגיאת שרת' });
     }
-
-    const [updated] = await db
-      .update(users)
-      .set({ role: role as RoleValue })
-      .where(eq(users.id, id))
-      .returning({ id: users.id, email: users.email, role: users.role });
-    res.json(updated);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'שגיאת שרת' });
   }
-});
+);
 
 app.listen(4000, () => console.log('Server on http://localhost:4000'));
