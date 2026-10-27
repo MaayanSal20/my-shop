@@ -471,7 +471,7 @@ async function expireOldOrders() {
     .where(and(eq(orders.status, 'pending'), lt(orders.expiresAt, new Date())));
   for (const o of old) await releaseOrder(o.id, 'expired');
 }
-setInterval(() => expireOldOrders().catch(console.error), 60_000);
+
 
 app.post('/api/checkout', limiter(15, 10), requireAuth, async (req: AuthedRequest, res) => {
   try {

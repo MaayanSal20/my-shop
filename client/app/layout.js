@@ -2,6 +2,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import CartProvider from '../components/CartProvider';
 import CartDrawer from '../components/CartDrawer';
+import { Heebo } from 'next/font/google';
+const heebo = Heebo({ subsets: ['hebrew', 'latin'], display: 'swap' });
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
