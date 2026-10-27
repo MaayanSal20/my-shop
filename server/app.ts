@@ -113,6 +113,14 @@ function requireRole(...roles: Role[]) {
   ];
 }
 
+// חוסם פעולות קנייה למי שלא אימתה אימייל (רץ אחרי requireAuth)
+function requireVerified(req: AuthedRequest, res: Response, next: NextFunction) {
+  if (!req.user?.emailVerified) {
+    return res.status(403).json({ error: 'יש לאמת את האימייל לפני ביצוע הזמנה' });
+  }
+  next();
+}
+
 // ---------- אימות אימייל בקוד ----------
 const CODE_TTL_MS = 10 * 60 * 1000; // תוקף הקוד
 const MAX_ATTEMPTS = 5; // ניסיונות שגויים מותרים
@@ -473,7 +481,7 @@ async function expireOldOrders() {
 }
 
 
-app.post('/api/checkout', limiter(15, 10), requireAuth, async (req: AuthedRequest, res) => {
+app.post('/api/checkout', limiter(15, 10), requireAuth,requireVerified, async (req: AuthedRequest, res) => {
   try {
     if (!req.user!.emailVerified) {
       return res.status(403).json({ error: 'יש לאמת את כתובת האימייל לפני רכישה' });
@@ -592,7 +600,7 @@ app.post('/api/orders/:id/cancel', requireAuth, async (req: AuthedRequest, res) 
 });
 
 // פותח תשלום להזמנה: מקבל מהספק כתובת דף תשלום
-app.post('/api/orders/:id/pay', requireAuth, async (req: AuthedRequest, res) => {
+app.post('/api/orders/:id/pay', requireAuth,requireVerified, async (req: AuthedRequest, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'מזהה לא תקין' });
@@ -616,7 +624,7 @@ app.post('/api/orders/:id/pay', requireAuth, async (req: AuthedRequest, res) => 
 });
 
 // אישור תשלום של הספק המדומה (פיתוח בלבד)
-app.post('/api/payments/mock/confirm', requireAuth, async (req: AuthedRequest, res) => {
+app.post('/api/payments/mock/confirm', requireAuth,requireVerified, async (req: AuthedRequest, res) => {
   try {
     if (
       process.env.NODE_ENV === 'production' ||
