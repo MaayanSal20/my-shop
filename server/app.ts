@@ -29,7 +29,7 @@ const app = express();
 
 // מאחורי שרת אירוח (פרוקסי) צריך לספר ל-Express, אחרת כל הבקשות ייראו כאילו הגיעו מאותה כתובת.
 // הערך 1 מתאים לפרוקסי אחד. לוודא מול שירות האירוח שנבחר
-if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
+if (process.env.NODE_ENV === 'production') app.set('trust proxy', 2);
 
 app.use(helmet());
 app.use(cors({ origin: CLIENT_URL, credentials: true }));
