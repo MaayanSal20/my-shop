@@ -107,3 +107,16 @@ export const orderItems = pgTable('order_items', {
   unitPrice: integer('unit_price').notNull(),
   quantity: integer('quantity').notNull(),
 }).enableRLS();
+
+
+// ---------- קודי איפוס סיסמה ----------
+export const passwordResets = pgTable('password_resets', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  codeHash: text('code_hash').notNull(),
+  attempts: integer('attempts').notNull().default(0),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}).enableRLS();

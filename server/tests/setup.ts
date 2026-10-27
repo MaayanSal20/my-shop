@@ -14,8 +14,10 @@ vi.mock('../db', async () => {
   return { db };
 });
 
-// לא שולחים מיילים אמיתיים, ותופסים את הקוד שנשלח
-vi.mock('../mail', () => ({ sendVerificationEmail: vi.fn(async () => {}) }));
+vi.mock('../mail', () => ({
+  sendVerificationEmail: vi.fn(async () => {}),
+  sendPasswordResetEmail: vi.fn(async () => {}),
+}));
 
 beforeAll(async () => {
   const h = await import('./helpers');

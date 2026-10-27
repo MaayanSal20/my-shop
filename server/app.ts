@@ -9,9 +9,9 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { and, desc, eq, ilike, inArray, lt, sql } from 'drizzle-orm';
-import { products, users, emailTokens, cartItems, orders, orderItems } from './db/schema';
+import { products, users, emailTokens, passwordResets, cartItems, orders, orderItems } from './db/schema';
 import { db } from './db';
-import { sendVerificationEmail } from './mail';
+import { sendVerificationEmail, sendPasswordResetEmail } from './mail';
 import { getProvider } from './payments/provider';
 import { markOrderPaid } from './payments/markPaid';
 import multer from 'multer';
@@ -346,6 +346,95 @@ app.post('/api/auth/resend-code', authIpLimit, byEmail('resend', 5), async (req,
         if (!tooSoon) await issueVerification(user.id, user.email);
       }
     }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'שגיאת שרת' });
+  }
+});
+
+// ---------- שכחתי סיסמה ----------
+const hashResetCode = (code: string) => hashCode(`reset:${code}`);
+
+// בקשת קוד איפוס. התשובה תמיד זהה, כדי לא לחשוף אילו אימיילים רשומים
+app.post('/api/auth/forgot-password', authIpLimit, byEmail('forgot', 5), async (req, res) => {
+  try {
+    const { email } = req.body ?? {};
+    if (typeof email === 'string') {
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, email.trim().toLowerCase()));
+
+      if (user) {
+        const [row] = await db
+          .select()
+          .from(passwordResets)
+          .where(eq(passwordResets.userId, user.id));
+        const tooSoon = row && Date.now() - row.createdAt.getTime() < RESEND_COOLDOWN_MS;
+        if (!tooSoon) {
+          const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+          await db.delete(passwordResets).where(eq(passwordResets.userId, user.id));
+          await db.insert(passwordResets).values({
+            userId: user.id,
+            codeHash: hashResetCode(code),
+            expiresAt: new Date(Date.now() + CODE_TTL_MS),
+          });
+          // בלי await, כדי שזמן התגובה לא יגלה אם האימייל רשום
+          sendPasswordResetEmail(user.email, code).catch((e) => console.error('[reset] נכשל:', e));
+        }
+      }
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'שגיאת שרת' });
+  }
+});
+
+app.post('/api/auth/reset-password', authIpLimit, byEmail('reset', 10), async (req, res) => {
+  try {
+    const { email, code, password } = req.body ?? {};
+    const fail = () =>
+      res.status(400).json({ error: 'הקוד שגוי או שפג תוקפו. אפשר לבקש קוד חדש.' });
+
+    if (typeof email !== 'string' || typeof code !== 'string' || !/^\d{6}$/.test(code)) {
+      return fail();
+    }
+    if (typeof password !== 'string' || password.length < 8 || Buffer.byteLength(password) > 72) {
+      return res.status(400).json({
+        error: 'הסיסמה חייבת להיות באורך 8 תווים לפחות ועד 72 בייטים (אות עברית תופסת 2)',
+      });
+    }
+
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email.trim().toLowerCase()));
+    if (!user) return fail();
+
+    const [row] = await db
+      .select()
+      .from(passwordResets)
+      .where(eq(passwordResets.userId, user.id));
+    if (!row || row.expiresAt < new Date() || row.attempts >= MAX_ATTEMPTS) return fail();
+
+    const a = Buffer.from(hashResetCode(code));
+    const b = Buffer.from(row.codeHash);
+    const match = a.length === b.length && crypto.timingSafeEqual(a, b);
+
+    if (!match) {
+      await db
+        .update(passwordResets)
+        .set({ attempts: sql`${passwordResets.attempts} + 1` })
+        .where(eq(passwordResets.id, row.id));
+      return fail();
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    await db.update(users).set({ passwordHash }).where(eq(users.id, user.id));
+    await db.delete(passwordResets).where(eq(passwordResets.userId, user.id));
+
     res.json({ ok: true });
   } catch (err) {
     console.error(err);
