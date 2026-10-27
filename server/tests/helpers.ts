@@ -10,9 +10,7 @@ export const PASSWORD = 'Passw0rd!test';
 const HASH = bcrypt.hashSync(PASSWORD, 4); // מעט סבבים כדי שהבדיקות יהיו מהירות
 
 export const SHIPPING = {
-  fullName: 'בדיקה',
-  phone: '0501234567',
-  city: 'תל אביב',
+  city: 'ירושלים',
   address: 'הרצל 1',
 };
 
@@ -34,7 +32,14 @@ export async function createUser(
 ) {
   const [u] = await db
     .insert(schema.users)
-    .values({ email, passwordHash: HASH, role, emailVerified: verified })
+    .values({
+      email,
+      passwordHash: HASH,
+      role,
+      emailVerified: verified,
+      name: 'ישראלה ישראלי',
+      phone: '0501234567',
+    })
     .returning();
   return u;
 }

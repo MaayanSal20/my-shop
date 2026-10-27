@@ -497,15 +497,30 @@ app.post('/api/checkout', limiter(15, 10), requireAuth, requireVerified, async (
       return res.status(403).json({ error: 'יש לאמת את כתובת האימייל לפני רכישה' });
     }
 
+        // שם וטלפון נלקחים מהחשבון, לא ממה שהלקוח שולח
+    const [profile] = await db
+      .select({ name: users.name, phone: users.phone })
+      .from(users)
+      .where(eq(users.id, req.user!.id));
+    const fullName = normalizeFullName(profile?.name);
+    const phone = normalizePhone(profile?.phone);
+    if (!fullName || !phone) {
+      return res.status(400).json({
+        error: 'יש להשלים שם מלא וטלפון נייד תקינים באזור האישי לפני רכישה',
+        code: 'PROFILE_INCOMPLETE',
+      });
+    }
+
     const b = req.body ?? {};
     const clean = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
-    const fullName = clean(b.fullName, 100);
-    const phone = clean(b.phone, 20);
     const city = clean(b.city, 60);
     const address = clean(b.address, 150);
     const notes = clean(b.notes, 300);
-    if (!fullName || !city || !address || !/^[0-9+\-\s]{9,15}$/.test(phone)) {
-      return res.status(400).json({ error: 'יש למלא שם, טלפון תקין, עיר וכתובת' });
+    if (!isKnownCity(city)) {
+      return res.status(400).json({ error: 'יש לבחור עיר מהרשימה' });
+    }
+    if (!address) {
+      return res.status(400).json({ error: 'יש למלא רחוב ומספר בית' });
     }
 
     await expireOldOrders(); // משחרר מלאי של הזמנות שפגו לפני שבודקים זמינות
