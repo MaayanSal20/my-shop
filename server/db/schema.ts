@@ -31,6 +31,8 @@ export const users = pgTable('users', {
   passwordHash: text('password_hash').notNull(),
   name: text('name'),
   phone: text('phone'),
+  city: text('city'),
+  address: text('address'),
   role: roleEnum('role').notNull().default('customer'),
   emailVerified: boolean('email_verified').notNull().default(false),
   marketingConsent: boolean('marketing_consent').notNull().default(false),

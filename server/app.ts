@@ -18,6 +18,7 @@ import multer from 'multer';
 import { detectImage, uploadProductImage } from './storage';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
+import { isKnownCity, normalizeFullName, normalizePhone } from './validation';
 
 // ---------- הגדרות כלליות ----------
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -219,16 +220,25 @@ app.post('/api/auth/register', limiter(60, 10), async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
+    const fullName = normalizeFullName(name);
+    if (!fullName) {
+      return res.status(400).json({ error: 'נא להזין שם מלא (שם פרטי ושם משפחה)' });
+    }
+    const cleanPhone = normalizePhone(phone);
+    if (!cleanPhone) {
+      return res.status(400).json({ error: 'נא להזין מספר נייד ישראלי תקין, לדוגמה 050-1234567' });
+    }
     const [user] = await db
       .insert(users)
       .values({
         email: normalized,
         passwordHash,
-        name,
-        phone,
+        name: fullName,
+        phone: cleanPhone,
         marketingConsent: marketingConsent === true,
       })
       .returning({ id: users.id, email: users.email, role: users.role });
+
 
     // שולחים מייל אימות. בלי await, כדי שכשל במייל לא יפיל את ההרשמה
     console.log('[register] שולחת אימות אל', user.email);
@@ -481,7 +491,7 @@ async function expireOldOrders() {
 }
 
 
-app.post('/api/checkout', limiter(15, 10), requireAuth,requireVerified, async (req: AuthedRequest, res) => {
+app.post('/api/checkout', limiter(15, 10), requireAuth, requireVerified, async (req: AuthedRequest, res) => {
   try {
     if (!req.user!.emailVerified) {
       return res.status(403).json({ error: 'יש לאמת את כתובת האימייל לפני רכישה' });
@@ -600,7 +610,7 @@ app.post('/api/orders/:id/cancel', requireAuth, async (req: AuthedRequest, res) 
 });
 
 // פותח תשלום להזמנה: מקבל מהספק כתובת דף תשלום
-app.post('/api/orders/:id/pay', requireAuth,requireVerified, async (req: AuthedRequest, res) => {
+app.post('/api/orders/:id/pay', requireAuth, requireVerified, async (req: AuthedRequest, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'מזהה לא תקין' });
@@ -624,7 +634,7 @@ app.post('/api/orders/:id/pay', requireAuth,requireVerified, async (req: AuthedR
 });
 
 // אישור תשלום של הספק המדומה (פיתוח בלבד)
-app.post('/api/payments/mock/confirm', requireAuth,requireVerified, async (req: AuthedRequest, res) => {
+app.post('/api/payments/mock/confirm', requireAuth, requireVerified, async (req: AuthedRequest, res) => {
   try {
     if (
       process.env.NODE_ENV === 'production' ||
@@ -901,5 +911,103 @@ app.patch(
     }
   }
 );
+
+// ---------- אזור אישי ----------
+app.get('/api/me/profile', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const [u] = await db
+      .select({
+        email: users.email,
+        name: users.name,
+        phone: users.phone,
+        city: users.city,
+        address: users.address,
+        emailVerified: users.emailVerified,
+      })
+      .from(users)
+      .where(eq(users.id, req.user!.id));
+    res.json(u);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'שגיאת שרת' });
+  }
+});
+
+// האימייל לא ניתן לעריכה: הוא לא נקרא מהבקשה בכלל
+app.patch('/api/me/profile', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const { name, phone, city, address } = req.body ?? {};
+
+    const fullName = normalizeFullName(name);
+    if (!fullName) {
+      return res.status(400).json({ error: 'נא להזין שם מלא (שם פרטי ושם משפחה)' });
+    }
+    const cleanPhone = normalizePhone(phone);
+    if (!cleanPhone) {
+      return res.status(400).json({ error: 'נא להזין מספר נייד ישראלי תקין, לדוגמה 050-1234567' });
+    }
+
+    let cleanCity: string | null = null;
+    if (typeof city === 'string' && city.trim() !== '') {
+      if (!isKnownCity(city)) {
+        return res.status(400).json({ error: 'נא לבחור עיר מהרשימה' });
+      }
+      cleanCity = city.trim();
+    }
+
+    let cleanAddress: string | null = null;
+    if (typeof address === 'string' && address.trim() !== '') {
+      cleanAddress = address.trim().replace(/\s+/g, ' ');
+      if (cleanAddress.length > 120) {
+        return res.status(400).json({ error: 'הכתובת ארוכה מדי' });
+      }
+    }
+
+    await db
+      .update(users)
+      .set({ name: fullName, phone: cleanPhone, city: cleanCity, address: cleanAddress })
+      .where(eq(users.id, req.user!.id));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'שגיאת שרת' });
+  }
+});
+
+app.get('/api/me/orders', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const rows = await db
+      .select()
+      .from(orders)
+      .where(eq(orders.userId, req.user!.id))
+      .orderBy(desc(orders.createdAt))
+      .limit(100);
+
+    const items = rows.length
+      ? await db
+          .select()
+          .from(orderItems)
+          .where(inArray(orderItems.orderId, rows.map((o) => o.id)))
+      : [];
+
+    res.json(
+      rows.map((o) => ({
+        id: o.id,
+        status: o.status,
+        total: o.total,
+        createdAt: o.createdAt,
+        paidAt: o.paidAt,
+        expiresAt: o.expiresAt,
+        items: items
+          .filter((i) => i.orderId === o.id)
+          .map((i) => ({ name: i.name, quantity: i.quantity, unitPrice: i.unitPrice })),
+      }))
+    );
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'שגיאת שרת' });
+  }
+});
+
 export { expireOldOrders };
 export default app;

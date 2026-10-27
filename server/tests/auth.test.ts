@@ -6,8 +6,12 @@ import { PASSWORD, createUser } from './helpers';
 
 const lastCode = () => vi.mocked(sendVerificationEmail).mock.calls.at(-1)![1];
 
+const VALID_PROFILE = { name: 'ישראלה ישראלי', phone: '050-1234567' };
+
 async function register(agent: ReturnType<typeof request.agent>, email = 'new@test.dev') {
-  const res = await agent.post('/api/auth/register').send({ email, password: PASSWORD });
+  const res = await agent
+    .post('/api/auth/register')
+    .send({ email, password: PASSWORD, ...VALID_PROFILE });
   expect(res.status).toBe(201);
   await vi.waitFor(() => expect(sendVerificationEmail).toHaveBeenCalled()); // המייל נשלח ברקע
 }
@@ -35,14 +39,32 @@ describe('הרשמה ואימות', () => {
   });
 
   it('סיסמה קצרה נדחית', async () => {
-    const res = await request(app).post('/api/auth/register').send({ email: 'x@test.dev', password: 'short' });
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({ email: 'x@test.dev', password: 'short', ...VALID_PROFILE });
     expect(res.status).toBe(400);
   });
 
   it('אימייל כפול נדחה', async () => {
     await createUser('dup@test.dev');
-    const res = await request(app).post('/api/auth/register').send({ email: 'dup@test.dev', password: PASSWORD });
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({ email: 'dup@test.dev', password: PASSWORD, ...VALID_PROFILE });
     expect(res.status).toBe(409);
+  });
+
+  it('דוחה טלפון לא תקין', async () => {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({ email: 'bad-phone@test.dev', password: PASSWORD, name: 'ישראלה ישראלי', phone: '123' });
+    expect(res.status).toBe(400);
+  });
+
+  it('דוחה שם בלי שם משפחה', async () => {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({ email: 'bad-name@test.dev', password: PASSWORD, name: 'ישראלה', phone: '0501234567' });
+    expect(res.status).toBe(400);
   });
 
   it('התחברות שגויה: אותה הודעה למשתמשת קיימת ולא קיימת', async () => {
