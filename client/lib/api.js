@@ -1,4 +1,4 @@
-const API = process.env.NEXT_PUBLIC_API_URL;
+const API = process.env.NEXT_PUBLIC_API_URL ?? '';
 
 export async function api(path, { method = 'GET', body } = {}) {
   const res = await fetch(`${API}${path}`, {
