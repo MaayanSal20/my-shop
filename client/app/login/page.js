@@ -33,6 +33,7 @@ export default function LoginPage() {
         {error && <p className="error" role="alert">{error}</p>}
         <button className="btn" disabled={loading}>{loading ? 'רגע...' : 'התחברות'}</button>
       </form>
+      <p><Link href="/forgot-password">שכחתי סיסמה</Link></p>
       <p>אין לך חשבון? <Link href="/register">הרשמה</Link></p>
     </main>
   );

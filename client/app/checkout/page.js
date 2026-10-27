@@ -1,23 +1,36 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
+import { isKnownCity } from '../../lib/cities';
+import CityInput from '../../components/CityInput';
 import { useCart } from '../../components/CartProvider';
 
 export default function CheckoutPage() {
   const router = useRouter();
   const { items, total, reload } = useCart();
+  const [profile, setProfile] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    api('/api/me/profile').then(({ ok, status, data }) => {
+      if (status === 401) return router.push('/login');
+      if (ok) setProfile(data);
+    });
+  }, [router]);
 
   async function onSubmit(e) {
     e.preventDefault();
     setError('');
-    setLoading(true);
     const f = new FormData(e.currentTarget);
+    if (!isKnownCity(f.get('city'))) return setError('נא לבחור עיר מהרשימה');
+
+    setLoading(true);
     const { ok, status, data } = await api('/api/checkout', {
       method: 'POST',
-      body: Object.fromEntries(f.entries()),
+      body: { city: f.get('city'), address: f.get('address'), notes: f.get('notes') },
     });
     setLoading(false);
     if (status === 401) return router.push('/login');
@@ -29,20 +42,40 @@ export default function CheckoutPage() {
     router.push(`/order/${data.id}`);
   }
 
+  if (!profile) {
+    return <main className="auth"><p>טוען...</p></main>;
+  }
+
+  const incomplete = !profile.name || !profile.phone;
+
   return (
     <main className="auth">
       <h1>פרטי משלוח</h1>
       {items.length > 0 && (
         <p>{items.length} מוצרים בעגלה · סה״כ <strong>₪{total}</strong></p>
       )}
+
+      <p>
+        <strong>{profile.name || 'שם חסר'}</strong> · {profile.phone || 'טלפון חסר'}
+        <br />
+        <small>הפרטים נלקחים מהחשבון שלך. <Link href="/account">עריכה באזור האישי</Link></small>
+      </p>
+      {incomplete && (
+        <p className="error" role="alert">
+          חסרים שם או טלפון בחשבון. <Link href="/account">להשלמה</Link>
+        </p>
+      )}
+
       <form onSubmit={onSubmit}>
-        <label>שם מלא<input name="fullName" required autoComplete="name" /></label>
-        <label>טלפון<input name="phone" type="tel" required autoComplete="tel" /></label>
-        <label>עיר<input name="city" required autoComplete="address-level2" /></label>
-        <label>רחוב ומספר בית<input name="address" required autoComplete="street-address" /></label>
+        <label>עיר
+          <CityInput defaultValue={profile.city ?? ''} required />
+        </label>
+        <label>רחוב ומספר בית
+          <input name="address" required defaultValue={profile.address ?? ''} autoComplete="street-address" />
+        </label>
         <label>הערות (לא חובה)<input name="notes" /></label>
         {error && <p className="error" role="alert">{error}</p>}
-        <button className="btn" disabled={loading || items.length === 0}>
+        <button className="btn" disabled={loading || items.length === 0 || incomplete}>
           {loading ? 'רגע...' : 'המשך לתשלום'}
         </button>
       </form>

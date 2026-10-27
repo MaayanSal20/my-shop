@@ -34,9 +34,24 @@ export default function RegisterPage() {
     <main className="auth">
       <h1>הרשמה</h1>
       <form onSubmit={onSubmit}>
-        <label>שם<input name="name" autoComplete="name" /></label>
-        <label>אימייל<input name="email" type="email" required autoComplete="email" /></label>
-        <label>טלפון<input name="phone" type="tel" autoComplete="tel" /></label>
+        <label>שם מלא (פרטי ומשפחה)
+          <input name="name" required autoComplete="name" />
+        </label>
+        <label>אימייל
+          <input name="email" type="email" required autoComplete="email" />
+        </label>
+        <label>טלפון נייד
+          <input
+            name="phone"
+            type="tel"
+            required
+            inputMode="tel"
+            autoComplete="tel"
+            placeholder="050-1234567"
+            pattern="[0-9+\-\s()]{9,16}"
+            title="מספר נייד ישראלי, לדוגמה 050-1234567"
+          />
+        </label>
         <label>סיסמה (לפחות 8 תווים)
           <input name="password" type="password" required minLength={8} autoComplete="new-password" />
         </label>
