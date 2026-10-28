@@ -13,6 +13,7 @@ export default function CheckoutPage() {
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sendingCode, setSendingCode] = useState(false);
 
   useEffect(() => {
     api('/api/me/profile').then(({ ok, status, data }) => {
@@ -20,6 +21,13 @@ export default function CheckoutPage() {
       if (ok) setProfile(data);
     });
   }, [router]);
+
+  // שולח קוד אימות ומעביר לדף ההקלדה
+  async function startVerify() {
+    setSendingCode(true);
+    await api('/api/auth/resend-code', { method: 'POST', body: { email: profile.email } });
+    router.push(`/verify?email=${encodeURIComponent(profile.email)}`);
+  }
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -47,12 +55,22 @@ export default function CheckoutPage() {
   }
 
   const incomplete = !profile.name || !profile.phone;
+  const unverified = !profile.emailVerified;
 
   return (
     <main className="auth">
       <h1>פרטי משלוח</h1>
       {items.length > 0 && (
         <p>{items.length} מוצרים בעגלה · סה״כ <strong>₪{total}</strong></p>
+      )}
+
+      {unverified && (
+        <div className="notice" role="alert">
+          <p>כדי לבצע הזמנה צריך לאמת את כתובת האימייל ({profile.email}).</p>
+          <button type="button" className="btn" onClick={startVerify} disabled={sendingCode}>
+            {sendingCode ? 'שולחת קוד...' : 'אימות אימייל'}
+          </button>
+        </div>
       )}
 
       <p>
@@ -75,7 +93,7 @@ export default function CheckoutPage() {
         </label>
         <label>הערות (לא חובה)<input name="notes" /></label>
         {error && <p className="error" role="alert">{error}</p>}
-        <button className="btn" disabled={loading || items.length === 0 || incomplete}>
+        <button className="btn" disabled={loading || items.length === 0 || incomplete || unverified}>
           {loading ? 'רגע...' : 'המשך לתשלום'}
         </button>
       </form>

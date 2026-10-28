@@ -364,3 +364,12 @@ header { background: var(--surface); }
   width: 22px; height: 22px; min-height: 0; padding: 0; margin: 0;
   accent-color: var(--primary);
 }
+
+/* הודעה עם פעולה (למשל: אימות אימייל לפני הזמנה) */
+.notice {
+  display: grid; gap: 12px; padding: 16px;
+  background: var(--soft); color: var(--ink);
+  border-inline-start: 4px solid var(--primary); border-radius: var(--radius);
+}
+.notice p { margin: 0; }
+.auth .notice .btn { width: auto; justify-self: start; }
