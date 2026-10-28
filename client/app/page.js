@@ -23,13 +23,6 @@ export default async function Home({ searchParams }) {
 
   return (
     <>
-      <header className="topbar">
-        <Link href="/" className="logo">myShop</Link>
-        <div className="authnav">
-          <AuthNav />
-          <CartButton />
-        </div>
-      </header>
 
       <section className="hero">
         <h1>תכשיטים, תיקים וצעיפים שמלווים אותך כל היום</h1>

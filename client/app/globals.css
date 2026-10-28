@@ -346,16 +346,17 @@ header { background: var(--surface); }
   *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; }
   .card:hover { transform: none; }
 }
+/* כותרת: התפריט והלוגו מימין, ערכת נושא ועגלה משמאל */
+.topbar-start, .topbar-end { display: flex; align-items: center; gap: 12px; }
 
 /* כפתור שמש/ירח */
-.authnav button.theme-btn {
+.theme-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 44px; height: 44px; min-height: 44px; padding: 0;
+  width: 44px; height: 44px; padding: 0;
   background: transparent; color: var(--ink);
   border: 1.5px solid var(--border); border-radius: 50%;
 }
-.authnav button.theme-btn:hover { border-color: var(--primary); color: var(--primary); }
-
+.theme-btn:hover { border-color: var(--primary); color: var(--primary); }
 /* העדפות באזור האישי */
 .pref { margin: 32px 0 0; padding: 0; border: 0; min-width: 0; }
 .pref legend { font-size: 22px; font-weight: 700; margin-bottom: 8px; padding: 0; }
@@ -375,3 +376,35 @@ header { background: var(--surface); }
 .auth .notice .btn { width: auto; justify-self: start; }
 
 .link-btn.danger { color: var(--error); }
+
+
+/* תפריט: שלושה קווים בלבד */
+.menu { position: relative; }
+.menu-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; padding: 0;
+  background: transparent; color: var(--ink);
+  border: 0; border-radius: 8px;
+}
+.menu-btn:hover { background: var(--bg); color: var(--primary); }
+
+.menu-panel {
+  position: absolute; inset-inline-start: 0; top: calc(100% + 8px); z-index: 30;
+  display: grid; gap: 2px;
+  min-width: 230px; max-width: min(300px, 90vw); padding: 8px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 12px; box-shadow: var(--shadow);
+}
+.menu-panel .menu-email {
+  padding: 8px 12px 10px; margin-bottom: 4px;
+  color: var(--muted); font-size: 14px;
+  border-bottom: 1px solid var(--line); overflow-wrap: anywhere;
+}
+.menu-panel a, .menu-panel button {
+  display: flex; align-items: center; width: 100%;
+  min-height: 44px; padding: 8px 12px;
+  background: none; color: var(--ink);
+  border: 0; border-radius: 8px;
+  text-align: start; text-decoration: none; font-size: 16px;
+}
+.menu-panel a:hover, .menu-panel button:hover { background: var(--bg); }

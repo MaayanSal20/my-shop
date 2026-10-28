@@ -26,3 +26,11 @@ export function setTheme(mode) {
   } catch {}
   window.dispatchEvent(new Event('themechange')); // מסנכרן את הכפתור וההעדפות
 }
+
+// מחיל מחדש את הערכה השמורה (גיבוי למקרה שהסקריפט בראש הדף לא רץ)
+export function applyStoredTheme() {
+  const mode = getStoredTheme();
+  const root = document.documentElement;
+  if (mode === 'light' || mode === 'dark') root.setAttribute('data-theme', mode);
+  else root.removeAttribute('data-theme');
+}

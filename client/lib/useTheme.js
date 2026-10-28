@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { effectiveTheme, getStoredTheme, setTheme } from './theme';
+import { applyStoredTheme, effectiveTheme, getStoredTheme, setTheme } from './theme';
 
 export default function useTheme() {
   const [state, setState] = useState({ mounted: false, mode: 'system', effective: 'light' });
 
   useEffect(() => {
+    applyStoredTheme();
+
     const read = () =>
       setState({ mounted: true, mode: getStoredTheme(), effective: effectiveTheme() });
     read();
