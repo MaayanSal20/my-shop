@@ -15,10 +15,11 @@ import { sendVerificationEmail, sendPasswordResetEmail } from './mail';
 import { getProvider } from './payments/provider';
 import { markOrderPaid } from './payments/markPaid';
 import multer from 'multer';
-import { detectImage, uploadProductImage } from './storage';
+import { deleteProductImage, detectImage, uploadProductImage } from './storage';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
 import { isKnownCity, normalizeFullName, normalizePhone } from './validation';
+
 
 // ---------- הגדרות כלליות ----------
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -586,7 +587,7 @@ app.post('/api/checkout', limiter(15, 10), requireAuth, requireVerified, async (
       return res.status(403).json({ error: 'יש לאמת את כתובת האימייל לפני רכישה' });
     }
 
-        // שם וטלפון נלקחים מהחשבון, לא ממה שהלקוח שולח
+    // שם וטלפון נלקחים מהחשבון, לא ממה שהלקוח שולח
     const [profile] = await db
       .select({ name: users.name, phone: users.phone })
       .from(users)
@@ -903,6 +904,7 @@ app.post(
         .set({ imageUrl })
         .where(eq(products.id, id))
         .returning();
+      await deleteProductImage(product.imageUrl); // מוחק את התמונה הקודמת
       res.json(updated);
     } catch (err) {
       console.error(err);
@@ -910,6 +912,28 @@ app.post(
     }
   }
 );
+
+// מחיקת תמונת מוצר (עובד או מנהל)
+app.delete('/api/admin/products/:id/image', ...requireRole('staff', 'admin'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: 'מזהה לא תקין' });
+
+    const [product] = await db.select().from(products).where(eq(products.id, id));
+    if (!product) return res.status(404).json({ error: 'המוצר לא נמצא' });
+
+    const [updated] = await db
+      .update(products)
+      .set({ imageUrl: null })
+      .where(eq(products.id, id))
+      .returning();
+    await deleteProductImage(product.imageUrl);
+    res.json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'שגיאת שרת' });
+  }
+});
 
 // ---------- רשימת הזמנות (עובד/מנהל) ----------
 const ORDER_STATUSES = ['pending', 'paid', 'cancelled', 'expired'] as const;
@@ -1089,9 +1113,9 @@ app.get('/api/me/orders', requireAuth, async (req: AuthedRequest, res) => {
 
     const items = rows.length
       ? await db
-          .select()
-          .from(orderItems)
-          .where(inArray(orderItems.orderId, rows.map((o) => o.id)))
+        .select()
+        .from(orderItems)
+        .where(inArray(orderItems.orderId, rows.map((o) => o.id)))
       : [];
 
     res.json(

@@ -49,3 +49,14 @@ export async function uploadProductImage(buf: Buffer, ext: string, mime: string)
   if (error) throw error;
   return sb().storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
 }
+
+// מוחק את הקובץ מה-Storage לפי הכתובת הציבורית שלו (בלי להפיל את הבקשה אם נכשל)
+export async function deleteProductImage(url: string | null | undefined) {
+  if (!url) return;
+  const marker = `/object/public/${BUCKET}/`;
+  const i = url.indexOf(marker);
+  if (i === -1) return;
+  const path = decodeURIComponent(url.slice(i + marker.length));
+  const { error } = await sb().storage.from(BUCKET).remove([path]);
+  if (error) console.error('מחיקת תמונה נכשלה:', error.message);
+}
