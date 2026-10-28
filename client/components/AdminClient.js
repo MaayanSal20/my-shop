@@ -108,6 +108,19 @@ export default function AdminClient() {
     await load();
   }
 
+  async function onDeleteImage() {
+    if (!editId) return;
+    if (!window.confirm('למחוק את התמונה? אי אפשר לבטל.')) return;
+    setError('');
+    setNotice('');
+    setUploading(true);
+    const { ok, data } = await api(`/api/admin/products/${editId}/image`, { method: 'DELETE' });
+    setUploading(false);
+    if (!ok) return setError(data?.error ?? 'המחיקה נכשלה');
+    setNotice('התמונה נמחקה ✓');
+    await load();
+  }
+
   async function remove(p) {
     if (!window.confirm(`למחוק את "${p.name}"? אי אפשר לבטל.`)) return;
     setError('');
@@ -151,12 +164,28 @@ export default function AdminClient() {
 
         {editId ? (
           <div className="admin-image">
-            {editing?.imageUrl && <img src={editing.imageUrl} alt="" className="admin-thumb" />}
+            {editing?.imageUrl ? (
+              <>
+                <img src={editing.imageUrl} alt="" className="admin-thumb" />
+                <div className="admin-actions">
+                  <button
+                    type="button"
+                    className="link-btn danger"
+                    onClick={onDeleteImage}
+                    disabled={uploading}
+                  >
+                    מחיקת התמונה
+                  </button>
+                </div>
+              </>
+            ) : (
+              <small>אין תמונה, ולכן יוצג הצבע שנבחר.</small>
+            )}
             <label>
-              תמונה (JPG, PNG או WebP, עד 3MB)
+              {editing?.imageUrl ? 'החלפת תמונה' : 'הוספת תמונה'} (JPG, PNG או WebP, עד 3MB)
               <input type="file" accept="image/jpeg,image/png,image/webp" onChange={onPickImage} disabled={uploading} />
             </label>
-            {uploading && <small>מעלה...</small>}
+            {uploading && <small>רגע...</small>}
           </div>
         ) : (
           <small>אפשר להעלות תמונה אחרי שהמוצר נשמר, דרך "עריכה".</small>

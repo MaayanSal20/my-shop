@@ -373,3 +373,5 @@ header { background: var(--surface); }
 }
 .notice p { margin: 0; }
 .auth .notice .btn { width: auto; justify-self: start; }
+
+.link-btn.danger { color: var(--error); }
