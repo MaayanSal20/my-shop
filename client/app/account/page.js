@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
 import { isKnownCity } from '../../lib/cities';
 import CityInput from '../../components/CityInput';
+import ThemePreference from '../../components/ThemePreference';
 
 const STATUS = {
   pending: 'ממתינה לתשלום',
@@ -90,7 +91,7 @@ export default function AccountPage() {
         <p role="status">{saved}</p>
         <button className="btn" disabled={saving}>{saving ? 'שומרת...' : 'שמירת פרטים'}</button>
       </form>
-
+      <ThemePreference />
       <h2 style={{ marginTop: 40 }}>ההזמנות שלי</h2>
       {orders.length === 0 && <p>עדיין אין הזמנות.</p>}
       <div className="orders-list">

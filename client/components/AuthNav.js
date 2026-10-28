@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { api } from '../lib/api';
 import { useCart } from './CartProvider';
+import ThemeToggle from './ThemeToggle';
 
 export default function AuthNav() {
   const router = useRouter();
@@ -53,6 +54,7 @@ export default function AuthNav() {
       <nav className="authnav">
         <Link href="/login">התחברות</Link>
         <Link href="/register" className="chip active">הרשמה</Link>
+        <ThemeToggle />
       </nav>
     );
   }
@@ -64,6 +66,7 @@ export default function AuthNav() {
       {['staff', 'admin'].includes(user.role) && <Link href="/admin">ניהול</Link>}
       {!user.emailVerified && <button onClick={startVerify}>אימות אימייל</button>}
       <button onClick={logout}>התנתקות</button>
+      <ThemeToggle />
     </nav>
   );
 }
